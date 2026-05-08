@@ -181,14 +181,14 @@ export default function Home() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-zinc-900 p-6 rounded-2xl">
-                <p className="text-zinc-400">Earned A</p>
+                <p className="text-zinc-400">Claimable stETH Rewards</p>
                 <p className="text-2xl font-bold">
                   {Number(earnedA).toLocaleString()}
                 </p>
               </div>
 
               <div className="bg-zinc-900 p-6 rounded-2xl">
-                <p className="text-zinc-400">Earned B</p>
+                <p className="text-zinc-400">Claimable stETH/WPLS LP Rewrds</p>
                 <p className="text-2xl font-bold">
                   {Number(earnedB).toLocaleString()}
                 </p>
