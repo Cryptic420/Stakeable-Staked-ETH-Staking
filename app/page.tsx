@@ -3,21 +3,16 @@
 import { useEffect, useState } from 'react'
 import { ethers } from 'ethers'
 
-// ============================================
-// CONFIG
-// ============================================
+const STAKING_CONTRACT = '0x7f6be8867d75daca634910cc0224fb2120f71d0c'
 
-const STAKING_CONTRACT = '0x7f6Be8867d75DaCa634910cC0224FB2120F71d0C'
+const TOKEN_TO_APPROVE =
+  '0x109FBF388863f3f44a81c736054d79595C063306'
 
-const TOKEN_TO_APPROVE = '0x109FBF388863f3f44a81c736054d79595C063306'
-const SPENDER = '0x7f6be8867d75daca634910cc0224fb2120f71d0c'
+const SPENDER =
+  '0x7f6be8867d75daca634910cc0224fb2120f71d0c'
 
 const MAX_UINT =
   '115792089237316195423570985008687907853269984665640564039457584007913129639935'
-
-// ============================================
-// STAKING ABI
-// ============================================
 
 const stakingAbi = [
   'function claimReward() external',
@@ -27,32 +22,19 @@ const stakingAbi = [
   'function balanceOf(address account) view returns (uint256)',
 ]
 
-// ============================================
-// ERC20 ABI
-// ============================================
-
 const erc20Abi = [
   'function approve(address spender, uint256 amount) external returns (bool)',
-  'function decimals() view returns (uint8)',
-  'function symbol() view returns (string)',
-  'function balanceOf(address account) view returns (uint256)',
 ]
 
 export default function Home() {
   const [wallet, setWallet] = useState('')
-  const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null)
-  const [signer, setSigner] = useState<ethers.JsonRpcSigner | null>(null)
+  const [signer, setSigner] = useState<any>(null)
 
   const [earnedA, setEarnedA] = useState('0')
   const [earnedB, setEarnedB] = useState('0')
   const [stakedBalance, setStakedBalance] = useState('0')
 
   const [stakeAmount, setStakeAmount] = useState('')
-  const [loading, setLoading] = useState(false)
-
-  // ============================================
-  // CONNECT WALLET
-  // ============================================
 
   async function connectWallet() {
     try {
@@ -61,18 +43,198 @@ export default function Home() {
         return
       }
 
-      const browserProvider = new ethers.BrowserProvider(
+      const provider = new ethers.BrowserProvider(
         (window as any).ethereum
       )
 
-      await browserProvider.send('eth_requestAccounts', [])
+      await (window as any).ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: '0x171' }],
+      })
 
-      const signer = await browserProvider.getSigner()
+      await provider.send('eth_requestAccounts', [])
+
+      const signer = await provider.getSigner()
+
       const address = await signer.getAddress()
 
-      setProvider(browserProvider)
       setSigner(signer)
       setWallet(address)
+
+      loadData(signer)
     } catch (err) {
       console.error(err)
+    }
+  }
+
+  async function loadData(activeSigner: any) {
+    try {
+      const address = await activeSigner.getAddress()
+
+      const contract = new ethers.Contract(
+        STAKING_CONTRACT,
+        stakingAbi,
+        activeSigner
+      )
+
+      const earnedAResult = await contract.earnedA(address)
+      const earnedBResult = await contract.earnedB(address)
+      const stakedResult = await contract.balanceOf(address)
+
+      setEarnedA(ethers.formatUnits(earnedAResult, 18))
+      setEarnedB(ethers.formatUnits(earnedBResult, 18))
+      setStakedBalance(ethers.formatUnits(stakedResult, 18))
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  async function approveToken() {
+    try {
+      if (!signer) return
+
+      const token = new ethers.Contract(
+        TOKEN_TO_APPROVE,
+        erc20Abi,
+        signer
+      )
+
+      const tx = await token.approve(SPENDER, MAX_UINT)
+
+      await tx.wait()
+
+      alert('Approval successful')
+    } catch (err) {
+      console.error(err)
+      alert('Approval failed')
+    }
+  }
+
+  async function stakeTokens() {
+    try {
+      if (!signer) return
+
+      const contract = new ethers.Contract(
+        STAKING_CONTRACT,
+        stakingAbi,
+        signer
+      )
+
+      const parsed = ethers.parseUnits(stakeAmount, 18)
+
+      const tx = await contract.stake(parsed)
+
+      await tx.wait()
+
+      alert('Stake successful')
+
+      loadData(signer)
+    } catch (err) {
+      console.error(err)
+      alert('Stake failed')
+    }
+  }
+
+  async function claimReward() {
+    try {
+      if (!signer) return
+
+      const contract = new ethers.Contract(
+        STAKING_CONTRACT,
+        stakingAbi,
+        signer
+      )
+
+      const tx = await contract.claimReward()
+
+      await tx.wait()
+
+      alert('Rewards claimed')
+
+      loadData(signer)
+    } catch (err) {
+      console.error(err)
+      alert('Claim failed')
+    }
+  }
+
+  return (
+    <main className="min-h-screen bg-black text-white p-8">
+      <div className="max-w-2xl mx-auto space-y-6">
+        <h1 className="text-4xl font-bold">
+          PulseChain Staking Dashboard
+        </h1>
+
+        {!wallet ? (
+          <button
+            onClick={connectWallet}
+            className="bg-purple-600 px-6 py-3 rounded-xl"
+          >
+            Connect Wallet
+          </button>
+        ) : (
+          <>
+            <div className="bg-zinc-900 p-6 rounded-2xl">
+              <p className="text-zinc-400">Wallet</p>
+              <p>{wallet}</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-zinc-900 p-6 rounded-2xl">
+                <p className="text-zinc-400">Earned A</p>
+                <p className="text-2xl font-bold">
+                  {Number(earnedA).toLocaleString()}
+                </p>
+              </div>
+
+              <div className="bg-zinc-900 p-6 rounded-2xl">
+                <p className="text-zinc-400">Earned B</p>
+                <p className="text-2xl font-bold">
+                  {Number(earnedB).toLocaleString()}
+                </p>
+              </div>
+
+              <div className="bg-zinc-900 p-6 rounded-2xl">
+                <p className="text-zinc-400">Staked</p>
+                <p className="text-2xl font-bold">
+                  {Number(stakedBalance).toLocaleString()}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={approveToken}
+              className="bg-blue-600 px-6 py-3 rounded-xl w-full"
+            >
+              Approve Max
+            </button>
+
+            <div className="bg-zinc-900 p-6 rounded-2xl space-y-4">
+              <input
+                type="number"
+                placeholder="Stake Amount"
+                value={stakeAmount}
+                onChange={(e) => setStakeAmount(e.target.value)}
+                className="w-full bg-zinc-800 p-3 rounded-xl"
+              />
+
+              <button
+                onClick={stakeTokens}
+                className="bg-green-600 px-6 py-3 rounded-xl w-full"
+              >
+                Stake
+              </button>
+            </div>
+
+            <button
+              onClick={claimReward}
+              className="bg-yellow-600 px-6 py-3 rounded-xl w-full"
+            >
+              Claim Rewards
+            </button>
+          </>
+        )}
+      </div>
+    </main>
+  )
 }
