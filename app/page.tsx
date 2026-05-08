@@ -67,28 +67,135 @@ export default function Home() {
     }
   }
 
+  async function getTokenPrice(tokenAddress: string) {
+    try {
+      const res = await fetch(
+        `https://api.dexscreener.com/latest/dex/tokens/${tokenAddress}`
+      )
+  
+      const data = await res.json()
+  
+      const pair = data.pairs?.[0]
+  
+      return {
+        priceUsd: Number(pair?.priceUsd || 0),
+        liquidityUsd: Number(pair?.liquidity?.usd || 0),
+      }
+    } catch (e) {
+      console.error('Price error', e)
+      return { priceUsd: 0, liquidityUsd: 0 }
+    }
+  }
+
+  async function getLpValue(lpAddress: string, signer: any) {
+    const erc20Abi = [
+      'function balanceOf(address) view returns (uint256)',
+      'function totalSupply() view returns (uint256)',
+      'function decimals() view returns (uint8)',
+    ]
+  
+    const lp = new ethers.Contract(lpAddress, erc20Abi, signer)
+  
+    const totalSupply = await lp.totalSupply()
+    const lpBalance = await lp.balanceOf(lpAddress)
+  
+    return {
+      totalSupply,
+      lpBalance,
+    }
+  }
+
   async function loadData(activeSigner: any) {
     try {
       const address = await activeSigner.getAddress()
-
-      const contract = new ethers.Contract(
+  
+      const staking = new ethers.Contract(
         STAKING_CONTRACT,
         stakingAbi,
         activeSigner
       )
+  
+      const lpAddress = await staking.lpToken()
 
-      const earnedAResult = await contract.earnedA(address)
-      const earnedBResult = await contract.earnedB(address)
-      const stakedResult = await contract.balanceOf(address)
+      const stETHAddress =
+        '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84'
 
-      setEarnedA(ethers.formatUnits(earnedAResult, 18))
-      setEarnedB(ethers.formatUnits(earnedBResult, 18))
-      setStakedBalance(ethers.formatUnits(stakedResult, 18))
+      const wplsAddress =
+        '0xA1077a294dDE1B09bB078844df40758a5D0f9a27'
+
+      const erc20Abi = [
+        'function balanceOf(address) view returns (uint256)',
+        'function decimals() view returns (uint8)',
+      ]
+  
+      const steth = new ethers.Contract(stETHAddress, erc20Abi, activeSigner)
+      const wpls = new ethers.Contract(wplsAddress, erc20Abi, activeSigner)
+  
+      // ─────────────────────────────
+      // Rewards
+      // ─────────────────────────────
+      const earnedA = await staking.earnedA(address)
+      const earnedB = await staking.earnedB(address)
+  
+      // ─────────────────────────────
+      // Staked LP balance
+      // ─────────────────────────────
+      const staked = await staking.balanceOf(address)
+  
+      // ─────────────────────────────
+      // LP composition (REAL VALUE)
+      // ─────────────────────────────
+      const lp = new ethers.Contract(lpAddress, erc20Abi, activeSigner)
+
+      const lpBalanceInPool = await wpls.balanceOf(lpAddress)
+      const totalLpSupply = await lp.totalSupply()
+
+      // proportional ownership of pool
+      const userShare = staked * BigInt(1e18) / totalLpSupply
+
+      const wplsInPool = await wpls.balanceOf(lpAddress)
+      const stethInPool = await steth.balanceOf(lpAddress)
+  
+      const userWpls = (wplsInPool * userShare) / BigInt(1e18)
+      const userSteth = (stethInPool * userShare) / BigInt(1e18)
+  
+      // ─────────────────────────────
+      // Prices from Dexscreener
+      // ─────────────────────────────
+      const wplsPrice = await getTokenPrice(wplsAddress)
+      const stethPrice = await getTokenPrice(stETHAddress)
+
+      // ─────────────────────────────
+      // USD values
+      // ─────────────────────────────
+      const stethUsd =
+        Number(ethers.formatUnits(earnedA, 18)) *
+        stethPrice.priceUsd
+
+      const lpUsd =
+        (Number(ethers.formatUnits(userWpls, 18)) *
+          wplsPrice.priceUsd) +
+        (Number(ethers.formatUnits(userSteth, 18)) *
+          stethPrice.priceUsd)
+
+      // ─────────────────────────────
+      // Set UI values
+      // ─────────────────────────────
+      setEarnedA(ethers.formatUnits(earnedA, 18))
+      setEarnedB(ethers.formatUnits(earnedB, 18))
+
+      setStakedBalance(ethers.formatUnits(staked, 18))
+
+      // OPTIONAL: if you want USD display
+      setRewardsUsd({
+        steth: stethUsd.toFixed(2),
+        lp: lpUsd.toFixed(2),
+      })
+  
     } catch (err) {
       console.error(err)
     }
   }
-
   async function approveToken() {
     try {
       if (!signer) return
